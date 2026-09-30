@@ -1,0 +1,556 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Tetris</title>
+
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: #111827;
+      color: white;
+      font-family: Arial, sans-serif;
+      touch-action: manipulation;
+    }
+
+    h1 {
+      margin: 0 0 10px;
+    }
+
+    .game-wrapper {
+      display: flex;
+      gap: 20px;
+      align-items: flex-start;
+    }
+
+    canvas {
+      background: #020617;
+      border: 3px solid #475569;
+      border-radius: 8px;
+    }
+
+    .panel {
+      min-width: 140px;
+    }
+
+    .score {
+      font-size: 20px;
+      margin-bottom: 20px;
+    }
+
+    button {
+      border: none;
+      border-radius: 10px;
+      padding: 14px 18px;
+      font-size: 20px;
+      background: #2563eb;
+      color: white;
+      cursor: pointer;
+    }
+
+    button:active {
+      transform: scale(0.96);
+    }
+
+    .controls {
+      margin-top: 20px;
+      display: grid;
+      grid-template-columns: repeat(3, 70px);
+      gap: 8px;
+      justify-content: center;
+    }
+
+    .controls button {
+      width: 70px;
+      height: 60px;
+      font-size: 26px;
+      padding: 0;
+    }
+
+    .empty {
+      visibility: hidden;
+    }
+
+    @media (max-width: 600px) {
+      .game-wrapper {
+        flex-direction: column;
+        align-items: center;
+      }
+
+      .panel {
+        text-align: center;
+      }
+
+      canvas {
+        width: 250px;
+        height: 500px;
+      }
+    }
+  </style>
+</head>
+
+<body>
+
+  <h1>TETRIS</h1>
+
+  <div class="game-wrapper">
+
+    <canvas id="game" width="300" height="600"></canvas>
+
+    <div class="panel">
+      <div class="score">
+        Punkty:
+        <strong id="score">0</strong>
+      </div>
+
+      <button onclick="restartGame()">
+        Nowa gra
+      </button>
+    </div>
+
+  </div>
+
+  <div class="controls">
+    <div class="empty"></div>
+    <button onclick="rotatePlayer()">↻</button>
+    <div class="empty"></div>
+
+    <button onclick="movePlayer(-1)">←</button>
+    <button onclick="dropPlayer()">↓</button>
+    <button onclick="movePlayer(1)">→</button>
+  </div>
+
+
+<script>
+
+const canvas = document.getElementById("game");
+const context = canvas.getContext("2d");
+
+context.scale(30, 30);
+
+const arena = createMatrix(10, 20);
+
+const colors = [
+  null,
+  "#ef4444",
+  "#22c55e",
+  "#3b82f6",
+  "#eab308",
+  "#a855f7",
+  "#06b6d4",
+  "#f97316"
+];
+
+const player = {
+  pos: {x: 0, y: 0},
+  matrix: null,
+  score: 0
+};
+
+
+function createMatrix(width, height) {
+
+  const matrix = [];
+
+  while (height--) {
+    matrix.push(new Array(width).fill(0));
+  }
+
+  return matrix;
+}
+
+
+function createPiece(type) {
+
+  if (type === "T") {
+    return [
+      [0,0,0],
+      [1,1,1],
+      [0,1,0]
+    ];
+  }
+
+  if (type === "O") {
+    return [
+      [2,2],
+      [2,2]
+    ];
+  }
+
+  if (type === "L") {
+    return [
+      [0,3,0],
+      [0,3,0],
+      [0,3,3]
+    ];
+  }
+
+  if (type === "J") {
+    return [
+      [0,4,0],
+      [0,4,0],
+      [4,4,0]
+    ];
+  }
+
+  if (type === "I") {
+    return [
+      [0,5,0,0],
+      [0,5,0,0],
+      [0,5,0,0],
+      [0,5,0,0]
+    ];
+  }
+
+  if (type === "S") {
+    return [
+      [0,6,6],
+      [6,6,0],
+      [0,0,0]
+    ];
+  }
+
+  if (type === "Z") {
+    return [
+      [7,7,0],
+      [0,7,7],
+      [0,0,0]
+    ];
+  }
+}
+
+
+function collide(arena, player) {
+
+  const matrix = player.matrix;
+  const offset = player.pos;
+
+  for (let y = 0; y < matrix.length; y++) {
+
+    for (let x = 0; x < matrix[y].length; x++) {
+
+      if (
+        matrix[y][x] !== 0 &&
+        (
+          arena[y + offset.y] &&
+          arena[y + offset.y][x + offset.x]
+        ) !== 0
+      ) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+
+function merge(arena, player) {
+
+  player.matrix.forEach((row, y) => {
+
+    row.forEach((value, x) => {
+
+      if (value !== 0) {
+        arena[y + player.pos.y][x + player.pos.x] = value;
+      }
+
+    });
+
+  });
+}
+
+
+function arenaSweep() {
+
+  let rowCount = 1;
+
+  outer:
+  for (let y = arena.length - 1; y >= 0; y--) {
+
+    for (let x = 0; x < arena[y].length; x++) {
+
+      if (arena[y][x] === 0) {
+        continue outer;
+      }
+
+    }
+
+    const row = arena.splice(y, 1)[0].fill(0);
+
+    arena.unshift(row);
+
+    y++;
+
+    player.score += rowCount * 10;
+
+    rowCount *= 2;
+  }
+}
+
+
+function drawMatrix(matrix, offset) {
+
+  matrix.forEach((row, y) => {
+
+    row.forEach((value, x) => {
+
+      if (value !== 0) {
+
+        context.fillStyle = colors[value];
+
+        context.fillRect(
+          x + offset.x,
+          y + offset.y,
+          1,
+          1
+        );
+
+        context.strokeStyle = "#111827";
+        context.lineWidth = 0.05;
+
+        context.strokeRect(
+          x + offset.x,
+          y + offset.y,
+          1,
+          1
+        );
+      }
+
+    });
+
+  });
+}
+
+
+function draw() {
+
+  context.fillStyle = "#020617";
+
+  context.fillRect(
+    0,
+    0,
+    canvas.width,
+    canvas.height
+  );
+
+  drawMatrix(arena, {x:0, y:0});
+
+  drawMatrix(player.matrix, player.pos);
+}
+
+
+function movePlayer(direction) {
+
+  player.pos.x += direction;
+
+  if (collide(arena, player)) {
+    player.pos.x -= direction;
+  }
+}
+
+
+function dropPlayer() {
+
+  player.pos.y++;
+
+  if (collide(arena, player)) {
+
+    player.pos.y--;
+
+    merge(arena, player);
+
+    playerReset();
+
+    arenaSweep();
+
+    updateScore();
+  }
+
+  dropCounter = 0;
+}
+
+
+function rotate(matrix, direction) {
+
+  for (let y = 0; y < matrix.length; y++) {
+
+    for (let x = 0; x < y; x++) {
+
+      [
+        matrix[x][y],
+        matrix[y][x]
+      ] = [
+        matrix[y][x],
+        matrix[x][y]
+      ];
+
+    }
+
+  }
+
+  if (direction > 0) {
+    matrix.forEach(row => row.reverse());
+  } else {
+    matrix.reverse();
+  }
+}
+
+
+function rotatePlayer() {
+
+  const pos = player.pos.x;
+
+  let offset = 1;
+
+  rotate(player.matrix, 1);
+
+  while (collide(arena, player)) {
+
+    player.pos.x += offset;
+
+    offset = -(offset + (offset > 0 ? 1 : -1));
+
+    if (offset > player.matrix[0].length) {
+
+      rotate(player.matrix, -1);
+
+      player.pos.x = pos;
+
+      return;
+    }
+  }
+}
+
+
+function playerReset() {
+
+  const pieces = "TJLOSZI";
+
+  player.matrix =
+    createPiece(
+      pieces[
+        Math.floor(
+          Math.random() * pieces.length
+        )
+      ]
+    );
+
+  player.pos.y = 0;
+
+  player.pos.x =
+    Math.floor(
+      arena[0].length / 2
+    )
+    -
+    Math.floor(
+      player.matrix[0].length / 2
+    );
+
+
+  if (collide(arena, player)) {
+
+    arena.forEach(
+      row => row.fill(0)
+    );
+
+    player.score = 0;
+
+    updateScore();
+
+    alert("Koniec gry");
+  }
+}
+
+
+function updateScore() {
+
+  document.getElementById("score")
+    .innerText = player.score;
+}
+
+
+function restartGame() {
+
+  arena.forEach(
+    row => row.fill(0)
+  );
+
+  player.score = 0;
+
+  updateScore();
+
+  playerReset();
+}
+
+
+let dropCounter = 0;
+
+let dropInterval = 700;
+
+let lastTime = 0;
+
+
+function update(time = 0) {
+
+  const deltaTime =
+    time - lastTime;
+
+  lastTime = time;
+
+  dropCounter += deltaTime;
+
+  if (dropCounter > dropInterval) {
+    dropPlayer();
+  }
+
+  draw();
+
+  requestAnimationFrame(update);
+}
+
+
+document.addEventListener(
+  "keydown",
+  event => {
+
+    if (event.key === "ArrowLeft") {
+      movePlayer(-1);
+    }
+
+    if (event.key === "ArrowRight") {
+      movePlayer(1);
+    }
+
+    if (event.key === "ArrowDown") {
+      dropPlayer();
+    }
+
+    if (event.key === "ArrowUp") {
+      rotatePlayer();
+    }
+
+  }
+);
+
+
+playerReset();
+
+updateScore();
+
+update();
+
+</script>
+
+</body>
+</html>
